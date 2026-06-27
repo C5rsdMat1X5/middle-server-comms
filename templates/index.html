@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Controller</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0d0d0f;
+  --bg2:      #141416;
+  --bg3:      #1c1c1f;
+  --border:   #2a2a2e;
+  --text:     #e2e2e6;
+  --dim:      #6b6b72;
+  --green:    #3ddb7a;
+  --yellow:   #f0c040;
+  --red:      #f05050;
+  --cyan:     #40c8e0;
+  --blue:     #5080f0;
+  --radius:   10px;
+  --gap:      12px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'SF Mono', 'Fira Code', 'Menlo', monospace;
+  font-size: 13px;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ─────────────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.logo { font-size: 15px; font-weight: 700; letter-spacing: .04em; color: var(--cyan); }
+
+.status-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--dim);
+  transition: background .3s;
+}
+.dot.connected    { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.dot.connecting   { background: var(--yellow); animation: pulse 1s infinite; }
+.dot.disconnected { background: var(--red); }
+
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* ── Layout ─────────────────────────────────────────── */
+main {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto;
+  gap: var(--gap);
+  padding: var(--gap);
+  flex: 1;
+  max-width: 960px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+@media (min-width: 700px) {
+  main {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "listeners actions"
+      "log       history";
+  }
+  #listeners-section { grid-area: listeners; }
+  #actions-section   { grid-area: actions; }
+  #log-section       { grid-area: log; }
+  #history-section   { grid-area: history; }
+}
+
+/* ── Card ────────────────────────────────────────────── */
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg3);
+}
+
+.card-title { font-size: 11px; font-weight: 600; letter-spacing: .08em; color: var(--dim); text-transform: uppercase; }
+
+.badge {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  min-width: 22px;
+  text-align: center;
+}
+
+/* ── Listeners ───────────────────────────────────────── */
+#listener-list { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+
+.listener-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  gap: 8px;
+  cursor: default;
+  transition: border-color .2s;
+}
+
+.listener-item.active { border-color: var(--cyan); }
+
+.listener-info { flex: 1; min-width: 0; }
+.listener-id   { font-weight: 600; font-size: 13px; color: var(--cyan); }
+.listener-addr { font-size: 11px; color: var(--dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.listener-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+.btn-small {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s;
+}
+.btn-small:hover { background: var(--bg3); border-color: var(--cyan); color: var(--cyan); }
+.btn-small.active-label { background: var(--cyan); color: #000; border-color: var(--cyan); cursor: default; font-weight: 600; }
+
+.empty-state { padding: 24px; text-align: center; color: var(--dim); font-size: 12px; }
+
+/* ── Actions ─────────────────────────────────────────── */
+#actions-section .card-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+
+.action-block {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.action-label { font-size: 11px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+
+.input-row { display: flex; gap: 8px; }
+
+.inp {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  outline: none;
+  transition: border-color .2s;
+  min-width: 0;
+}
+.inp:focus { border-color: var(--cyan); }
+.inp::placeholder { color: var(--dim); }
+
+.btn {
+  padding: 7px 14px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-cyan  { background: var(--cyan); color: #000; }
+.btn-cyan:hover  { filter: brightness(1.15); }
+.btn-green { background: var(--green); color: #000; }
+.btn-green:hover { filter: brightness(1.15); }
+.btn-red   { background: transparent; color: var(--red); border-color: var(--red); }
+.btn-red:hover   { background: var(--red); color: #000; }
+.btn:disabled    { opacity: .4; cursor: not-allowed; filter: none !important; }
+
+.destruct-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.target-chip {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 11px;
+  color: var(--cyan);
+}
+.target-chip.none { color: var(--dim); }
+
+/* ── Log ─────────────────────────────────────────────── */
+#log-list {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.log-entry {
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg3);
+  border-left: 3px solid var(--border);
+  font-size: 12px;
+  animation: fadeIn .2s;
+}
+.log-entry.ok   { border-left-color: var(--green); }
+.log-entry.error{ border-left-color: var(--red); }
+.log-entry.warn { border-left-color: var(--yellow); }
+.log-entry.info { border-left-color: var(--cyan); }
+.log-entry.raw  { border-left-color: var(--dim); }
+
+.log-time { color: var(--dim); flex-shrink: 0; font-size: 11px; padding-top: 1px; }
+.log-from { color: var(--cyan); flex-shrink: 0; }
+.log-body { flex: 1; word-break: break-all; }
+
+@keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+
+/* ── History ─────────────────────────────────────────── */
+#history-list {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.hist-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: border-color .15s;
+  animation: fadeIn .2s;
+}
+.hist-entry:hover { border-color: var(--cyan); }
+
+.hist-icon {
+  font-size: 15px;
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+  margin-top: 1px;
+}
+
+.hist-body { flex: 1; min-width: 0; }
+.hist-type { font-size: 10px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
+.hist-param { font-size: 12px; color: var(--text); margin-top: 2px; word-break: break-all;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.hist-meta { font-size: 10px; color: var(--dim); margin-top: 3px; }
+
+.hist-run {
+  flex-shrink: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 3px 7px;
+  font-size: 11px;
+  color: var(--dim);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s;
+  margin-top: 2px;
+}
+.hist-run:hover { border-color: var(--cyan); color: var(--cyan); }
+
+/* ── Scrollbars ──────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── Toast ───────────────────────────────────────────── */
+#toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 16px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  z-index: 100;
+}
+
+.toast {
+  padding: 9px 14px;
+  border-radius: 8px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  animation: slideIn .2s;
+  max-width: 260px;
+}
+.toast.ok   { border-color: var(--green); color: var(--green); }
+.toast.err  { border-color: var(--red); color: var(--red); }
+.toast.info { border-color: var(--cyan); color: var(--cyan); }
+
+@keyframes slideIn { from{opacity:0;transform:translateX(20px)} to{opacity:1;transform:none} }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="logo">Controller</span>
+  <div class="status-pill">
+    <span class="dot" id="conn-dot"></span>
+    <span id="conn-label">Conectando...</span>
+  </div>
+</header>
+
+<main>
+  <!-- Listeners -->
+  <section id="listeners-section">
+    <div class="card" style="height:100%">
+      <div class="card-header">
+        <span class="card-title">Listeners</span>
+        <span class="badge" id="listener-count">0</span>
+      </div>
+      <div id="listener-list">
+        <div class="empty-state" id="listeners-empty">Sin listeners conectados</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Actions -->
+  <section id="actions-section">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Acciones</span>
+        <span class="badge" id="target-badge" style="color:var(--cyan)">—</span>
+      </div>
+      <div class="card-body">
+        <!-- Audio URL -->
+        <div class="action-block">
+          <div class="action-label">Audio URL</div>
+          <div class="input-row">
+            <input class="inp" id="audio-url" type="url" placeholder="https://..." autocomplete="off" autocorrect="off" spellcheck="false">
+            <button class="btn btn-cyan" onclick="sendAudio()">Enviar</button>
+          </div>
+        </div>
+
+        <!-- TTS -->
+        <div class="action-block">
+          <div class="action-label">Text to Speech</div>
+          <div class="input-row">
+            <input class="inp" id="tts-txt" type="text" placeholder="Mensaje..." autocomplete="off" autocorrect="off">
+            <button class="btn btn-green" onclick="sendTTS()">Enviar</button>
+          </div>
+        </div>
+
+        <!-- Self-destruct -->
+        <div class="action-block">
+          <div class="action-label" style="color:var(--red)">Self-Destruct</div>
+          <div class="destruct-row">
+            <span class="target-chip none" id="destruct-target">sin target</span>
+            <button class="btn btn-red" onclick="confirmDestruct()">Ejecutar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Log -->
+  <section id="log-section">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Respuestas</span>
+        <button class="btn-small" onclick="clearLog()">Limpiar</button>
+      </div>
+      <div id="log-list">
+        <div class="empty-state" id="log-empty">Sin respuestas aún</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- History -->
+  <section id="history-section">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Historial</span>
+        <button class="btn-small" onclick="clearHistory()">Limpiar</button>
+      </div>
+      <div id="history-list">
+        <div class="empty-state" id="history-empty">Sin acciones aún</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="toast-container"></div>
+
+<!-- Confirm modal -->
+<div id="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:50;display:none;align-items:center;justify-content:center;">
+  <div style="background:var(--bg2);border:1px solid var(--red);border-radius:12px;padding:24px;max-width:340px;width:90%;text-align:center;">
+    <div style="font-size:24px;margin-bottom:12px;">⚠️</div>
+    <div style="font-weight:700;margin-bottom:8px;color:var(--red)">Self-Destruct</div>
+    <div id="modal-msg" style="color:var(--dim);font-size:12px;margin-bottom:20px"></div>
+    <div style="display:flex;gap:10px;justify-content:center">
+      <button class="btn btn-red" id="modal-confirm">Confirmar</button>
+      <button class="btn" style="background:var(--bg3);border-color:var(--border)" onclick="closeModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────
+let listeners = {};
+let currentTarget = null;
+let clientHistory = [];
+
+// ── SSE ───────────────────────────────────────────────
+function startSSE() {
+  const es = new EventSource('/stream');
+
+  es.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    handleServerEvent(data);
+  };
+
+  es.onerror = () => {
+    setStatus('disconnected', 'Sin conexión');
+    setTimeout(() => { es.close(); startSSE(); }, 4000);
+  };
+}
+
+function handleServerEvent(d) {
+  switch (d.event) {
+    case 'init':
+    case 'listeners_update':
+      listeners = d.listeners || {};
+      currentTarget = d.current || null;
+      if (d.event === 'init') setStatus(d.manager_connected ? 'connected' : 'connecting',
+        d.manager_connected ? 'Conectado' : 'Conectando...');
+      renderListeners();
+      break;
+
+    case 'listener_connected':
+      listeners = d.listeners || {};
+      currentTarget = d.current || null;
+      renderListeners();
+      toast(`Listener ${d.id} conectado`, 'info');
+      break;
+
+    case 'listener_disconnected':
+      listeners = d.listeners || {};
+      currentTarget = d.current || null;
+      renderListeners();
+      toast(`Listener ${d.id} desconectado`, 'err');
+      break;
+
+    case 'target_changed':
+      currentTarget = d.current;
+      renderListeners();
+      break;
+
+    case 'manager_connected':
+      setStatus('connected', 'Conectado');
+      toast('Manager conectado', 'ok');
+      break;
+
+    case 'manager_disconnected':
+      setStatus('disconnected', 'Desconectado');
+      toast('Manager desconectado', 'err');
+      break;
+
+    case 'manager_connecting':
+      setStatus('connecting', 'Conectando...');
+      break;
+
+    case 'response':
+      addLogEntry(d);
+      break;
+
+    case 'raw':
+      addLogEntry({ rtype: 'raw', from: '', msg: d.data, time: d.time });
+      break;
+
+    case 'history_entry':
+      prependHistory(d.entry);
+      break;
+
+    case 'ping':
+      break;
+  }
+}
+
+// ── Status ────────────────────────────────────────────
+function setStatus(state, label) {
+  const dot = document.getElementById('conn-dot');
+  const lbl = document.getElementById('conn-label');
+  dot.className = 'dot ' + state;
+  lbl.textContent = label;
+}
+
+// ── Listeners render ──────────────────────────────────
+function renderListeners() {
+  const list  = document.getElementById('listener-list');
+  const empty = document.getElementById('listeners-empty');
+  const count = document.getElementById('listener-count');
+  const badge = document.getElementById('target-badge');
+  const dtgt  = document.getElementById('destruct-target');
+
+  const ids = Object.keys(listeners);
+  count.textContent = ids.length;
+  badge.textContent = currentTarget || '—';
+  dtgt.textContent  = currentTarget || 'sin target';
+  dtgt.className    = 'target-chip' + (currentTarget ? '' : ' none');
+
+  // Remove old items
+  list.querySelectorAll('.listener-item').forEach(el => el.remove());
+  empty.style.display = ids.length ? 'none' : '';
+
+  ids.forEach(lid => {
+    const addr   = listeners[lid];
+    const active = lid === currentTarget;
+    const el = document.createElement('div');
+    el.className = 'listener-item' + (active ? ' active' : '');
+    el.innerHTML = `
+      <div class="listener-info">
+        <div class="listener-id">${esc(lid)}</div>
+        <div class="listener-addr">${esc(addr)}</div>
+      </div>
+      <div class="listener-actions">
+        ${active
+          ? `<span class="btn-small active-label">Activo</span>`
+          : `<button class="btn-small" onclick="switchTarget('${esc(lid)}')">Seleccionar</button>`
+        }
+      </div>`;
+    list.appendChild(el);
+  });
+}
+
+// ── Log ───────────────────────────────────────────────
+function addLogEntry(d) {
+  const list  = document.getElementById('log-list');
+  const empty = document.getElementById('log-empty');
+  empty.style.display = 'none';
+
+  const cls = d.rtype === 'ok' ? 'ok' : d.rtype === 'error' ? 'error' : d.rtype === 'warn' ? 'warn' : d.rtype === 'raw' ? 'raw' : 'info';
+  const icon = { ok:'✓', error:'✗', warn:'⚠', raw:'·' }[d.rtype] || '?';
+
+  const el = document.createElement('div');
+  el.className = `log-entry ${cls}`;
+  el.innerHTML = `
+    <span class="log-time">${esc(d.time||'')}</span>
+    ${d.from ? `<span class="log-from">[${esc(d.from)}]</span>` : ''}
+    <span class="log-body">${icon} ${d.stage ? `[${esc(d.stage)}] ` : ''}${esc(d.msg||'')}</span>`;
+  list.insertBefore(el, list.firstChild);
+
+  // Keep max 100 entries
+  while (list.children.length > 101) list.lastChild.remove();
+}
+
+function clearLog() {
+  const list = document.getElementById('log-list');
+  list.querySelectorAll('.log-entry').forEach(el => el.remove());
+  document.getElementById('log-empty').style.display = '';
+}
+
+// ── History ───────────────────────────────────────────
+const ICONS = { audio: '🔊', tts: '💬', destruct: '💀' };
+
+function prependHistory(entry) {
+  clientHistory.unshift(entry);
+  if (clientHistory.length > 200) clientHistory.pop();
+
+  const list  = document.getElementById('history-list');
+  const empty = document.getElementById('history-empty');
+  empty.style.display = 'none';
+
+  const el = makeHistoryEl(entry);
+  list.insertBefore(el, list.firstChild);
+  while (list.children.length > 201) list.lastChild.remove();
+}
+
+function makeHistoryEl(entry) {
+  const el = document.createElement('div');
+  el.className = 'hist-entry';
+  el.dataset.id = entry.id;
+
+  let paramLine = '';
+  if (entry.type === 'audio') paramLine = entry.params.url || '';
+  else if (entry.type === 'tts') paramLine = entry.params.txt || '';
+  else if (entry.type === 'destruct') paramLine = 'Self-Destruct';
+
+  el.innerHTML = `
+    <span class="hist-icon">${ICONS[entry.type] || '?'}</span>
+    <div class="hist-body">
+      <div class="hist-type">${esc(entry.type)}</div>
+      <div class="hist-param">${esc(paramLine)}</div>
+      <div class="hist-meta">${esc(entry.time)} · ${esc(entry.target || '?')}</div>
+    </div>
+    <button class="hist-run" onclick="repeatHistory(${entry.id})" title="Repetir">▶</button>`;
+  return el;
+}
+
+function repeatHistory(id) {
+  const entry = clientHistory.find(e => e.id === id);
+  if (!entry) return;
+
+  if (entry.type === 'audio') {
+    document.getElementById('audio-url').value = entry.params.url || '';
+    sendAudio();
+  } else if (entry.type === 'tts') {
+    document.getElementById('tts-txt').value = entry.params.txt || '';
+    sendTTS();
+  } else if (entry.type === 'destruct') {
+    confirmDestruct();
+  }
+}
+
+function clearHistory() {
+  clientHistory = [];
+  const list = document.getElementById('history-list');
+  list.querySelectorAll('.hist-entry').forEach(el => el.remove());
+  document.getElementById('history-empty').style.display = '';
+}
+
+// ── API calls ─────────────────────────────────────────
+async function sendAudio() {
+  const url = document.getElementById('audio-url').value.trim();
+  if (!url) { toast('URL vacía', 'err'); return; }
+  const r = await api('/api/audio', { url });
+  if (r.ok) { toast(`Audio → ${r.target}`, 'ok'); }
+}
+
+async function sendTTS() {
+  const txt = document.getElementById('tts-txt').value.trim();
+  if (!txt) { toast('Mensaje vacío', 'err'); return; }
+  const r = await api('/api/tts', { txt });
+  if (r.ok) { toast(`TTS → ${r.target}`, 'ok'); }
+}
+
+function confirmDestruct() {
+  if (!currentTarget) { toast('Sin target seleccionado', 'err'); return; }
+  const overlay = document.getElementById('modal-overlay');
+  document.getElementById('modal-msg').textContent = `¿Destruir listener "${currentTarget}"? Esta acción no se puede deshacer.`;
+  document.getElementById('modal-confirm').onclick = async () => {
+    closeModal();
+    const r = await api('/api/destruct', {});
+    if (r.ok) toast(`Self-Destruct enviado → ${r.target}`, 'info');
+  };
+  overlay.style.display = 'flex';
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').style.display = 'none';
+}
+
+async function switchTarget(id) {
+  const r = await api('/api/switch', { id });
+  if (r.ok) toast(`Target → ${r.current}`, 'ok');
+}
+
+async function api(path, body) {
+  try {
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (data.error) toast(data.error, 'err');
+    return data;
+  } catch (e) {
+    toast('Error de red', 'err');
+    return {};
+  }
+}
+
+// ── Toast ─────────────────────────────────────────────
+function toast(msg, type = 'info') {
+  const c  = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  c.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, 2800);
+}
+
+// ── Helpers ───────────────────────────────────────────
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Enter key support ─────────────────────────────────
+document.getElementById('audio-url').addEventListener('keydown', e => { if (e.key === 'Enter') sendAudio(); });
+document.getElementById('tts-txt').addEventListener('keydown', e => { if (e.key === 'Enter') sendTTS(); });
+
+// ── Close modal on backdrop click ─────────────────────
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+// ── Init ──────────────────────────────────────────────
+(async () => {
+  // Load initial state
+  try {
+    const state = await (await fetch('/api/state')).json();
+    listeners = state.listeners || {};
+    currentTarget = state.current_target || null;
+    setStatus(state.manager_connected ? 'connected' : 'connecting',
+      state.manager_connected ? 'Conectado' : 'Conectando...');
+    renderListeners();
+    // Load history
+    (state.history || []).reverse().forEach(e => prependHistory(e));
+  } catch {}
+
+  startSSE();
+})();
+</script>
+</body>
+</html>
