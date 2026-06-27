@@ -7,8 +7,8 @@ import os
 import sys
 
 
-HOST = "192.168.4.31"
-PORT = 9000
+HOST = "190.153.147.14"
+PORT = 7833
 RECONNECT_DELAY = 3
 
 

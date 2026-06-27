@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 HOST = "localhost"
-PORT = 9000
+PORT = 7833
 API_KEY = os.getenv("API_KEY")
 
 R   = "\033[0m"
