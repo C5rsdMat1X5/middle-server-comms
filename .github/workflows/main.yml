@@ -1,0 +1,55 @@
+
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Download FFmpeg
+        shell: pwsh
+        run: |
+          Invoke-WebRequest `
+            -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" `
+            -OutFile ffmpeg.zip
+
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg
+
+          $bin = Get-ChildItem ffmpeg -Directory -Recurse |
+            Where-Object { $_.Name -eq "bin" } |
+            Select-Object -First 1
+
+          New-Item -ItemType Directory -Force -Path ffmpeg-bin
+          Copy-Item "$($bin.FullName)\*" ffmpeg-bin -Recurse
+
+      - name: Build executable
+        run: |
+          pyinstaller --onefile --noconsole `
+            --collect-all yt_dlp `
+            --add-data "ffmpeg-bin;ffmpeg-bin" `
+            listener.py
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyApp-Windows-x64
+          path: dist/MyApp.exe
