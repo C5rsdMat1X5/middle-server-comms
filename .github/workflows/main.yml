@@ -46,10 +46,11 @@ jobs:
           pyinstaller --onefile --noconsole `
             --collect-all yt_dlp `
             --add-data "ffmpeg-bin;ffmpeg-bin" `
+            --name base `
             listener.py
 
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
-          name: MyApp-Windows-x64
-          path: dist/MyApp.exe
+          name: base-Windows-x64
+          path: dist/base.exe
