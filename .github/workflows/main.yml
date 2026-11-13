@@ -41,6 +41,13 @@ jobs:
           New-Item -ItemType Directory -Force -Path ffmpeg-bin
           Copy-Item "$($bin.FullName)\*" ffmpeg-bin -Recurse
 
+      - name: Download yt-dlp
+        shell: pwsh
+        run: |
+          Invoke-WebRequest `
+            -Uri "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" `
+            -OutFile "ffmpeg-bin/yt-dlp.exe"
+
       - name: Build executable
         run: |
           pyinstaller --onefile --noconsole `
