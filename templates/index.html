@@ -111,11 +111,15 @@
       gap: 16px;
     }
 
+    main > section {
+      min-width: 0;
+    }
+
     @media (min-width: 820px) {
       main {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        grid-template-areas: "zones actions" "log history";
+        grid-template-areas: "zones actions" "saved log" "history history";
         align-items: start;
       }
 
@@ -134,6 +138,10 @@
       #history-sec {
         grid-area: history;
       }
+
+      #saved-sec {
+        grid-area: saved;
+      }
     }
 
     /* ── Card ── */
@@ -142,6 +150,7 @@
       border: 1px solid var(--border);
       border-radius: var(--r);
       overflow: hidden;
+      min-width: 0;
     }
 
     .card-head {
@@ -198,6 +207,7 @@
       border: 1.5px solid transparent;
       transition: border-color .2s, background .2s;
       cursor: pointer;
+      min-width: 0;
     }
 
     .zone.active {
@@ -329,6 +339,15 @@
       color: var(--dim);
     }
 
+    select.inp {
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23868792' d='M6 8L2 4h8z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 32px;
+    }
+
     .btn {
       padding: 12px 18px;
       border-radius: 10px;
@@ -442,7 +461,7 @@
       gap: 9px;
     }
 
-    /* ── Log & History ── */
+    /* ── Log & History & Saved ── */
     .scroll {
       padding: 10px;
       display: flex;
@@ -450,6 +469,8 @@
       gap: 6px;
       max-height: 300px;
       overflow-y: auto;
+      overflow-x: hidden;
+      min-width: 0;
     }
 
     .log-row {
@@ -461,6 +482,7 @@
       border-left: 3px solid var(--border);
       font-size: 13px;
       animation: fade .2s;
+      min-width: 0;
     }
 
     .log-row.ok {
@@ -494,6 +516,8 @@
     .log-body {
       flex: 1;
       word-break: break-word;
+      overflow-wrap: anywhere;
+      min-width: 0;
     }
 
     @keyframes fade {
@@ -516,6 +540,8 @@
       background: var(--surface2);
       border: 1px solid var(--border);
       animation: fade .2s;
+      min-width: 0;
+      overflow: hidden;
     }
 
     .hist-ico {
@@ -528,6 +554,7 @@
     .hist-body {
       flex: 1;
       min-width: 0;
+      overflow: hidden;
     }
 
     .hist-label {
@@ -536,6 +563,13 @@
       display: flex;
       align-items: center;
       gap: 6px;
+      min-width: 0;
+    }
+
+    .hist-label > span:first-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .hist-param {
@@ -545,6 +579,8 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      max-width: 100%;
+      min-width: 0;
     }
 
     .hist-meta {
@@ -755,7 +791,28 @@
             <button class="btn btn-ghost" onclick="sendUpdate()">⟳ Actualizar</button>
           </div>
 
+          <div class="btn-grid">
+            <button class="btn btn-ghost" onclick="openBroadcast()">📢 A todos</button>
+            <button class="btn btn-accent" onclick="saveCurrent()">💾 Guardar actual</button>
+          </div>
+
           <button class="btn btn-red btn-wide" onclick="confirmWipe()">Limpiar equipo (reset)</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Saved gallery -->
+    <section id="saved-sec">
+      <div class="card">
+        <div class="card-head">
+          <h2>Guardados</h2>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="link-btn" onclick="openSaveNew()">+ Nuevo</button>
+            <span class="count" id="saved-count">0</span>
+          </div>
+        </div>
+        <div class="scroll" id="saved">
+          <div class="empty" id="saved-empty">Sin elementos guardados</div>
         </div>
       </div>
     </section>
@@ -811,11 +868,66 @@
     </div>
   </div>
 
+  <!-- Save new -->
+  <div class="overlay" id="save-overlay">
+    <div class="sheet">
+      <h3>Guardar elemento</h3>
+      <div class="field" style="margin-bottom:10px">
+        <label>Tipo</label>
+        <select class="inp" id="save-type">
+          <option value="audio">Audio por URL</option>
+          <option value="yt">YouTube</option>
+          <option value="tts">TTS</option>
+          <option value="vol">Volumen</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label>Valor</label>
+        <input class="inp" id="save-value" type="text" placeholder="https://… / texto / 0.5" autocomplete="off">
+      </div>
+      <div class="field" style="margin-bottom:18px">
+        <label>Etiqueta</label>
+        <input class="inp" id="save-label" type="text" placeholder="opcional" autocomplete="off">
+      </div>
+      <div class="sheet-btns">
+        <button class="btn btn-ghost" onclick="closeOverlay('save-overlay')">Cancelar</button>
+        <button class="btn btn-accent" id="save-confirm">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Broadcast -->
+  <div class="overlay" id="broadcast-overlay">
+    <div class="sheet">
+      <h3>Enviar a todos</h3>
+      <p>Se enviará a <b id="broadcast-count">0</b> listeners conectados.</p>
+      <div class="field" style="margin-bottom:10px">
+        <label>Tipo</label>
+        <select class="inp" id="broadcast-type">
+          <option value="audio">Audio por URL</option>
+          <option value="yt">YouTube</option>
+          <option value="tts">TTS</option>
+          <option value="vol">Volumen</option>
+          <option value="stop">Detener</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:18px" id="broadcast-value-wrap">
+        <label>Valor</label>
+        <input class="inp" id="broadcast-value" type="text" placeholder="https://… / texto / 0.5">
+      </div>
+      <div class="sheet-btns">
+        <button class="btn btn-ghost" onclick="closeOverlay('broadcast-overlay')">Cancelar</button>
+        <button class="btn btn-accent" id="broadcast-confirm">Enviar a todos</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ── State ──
     let zones = {};            // id -> { addr, name }
     let target = null;
     let history = [];
+    let saved = [];
 
     // ── SSE ──
     function startSSE() {
@@ -841,6 +953,11 @@
         case 'zone_renamed':
           if (zones[d.id]) zones[d.id].name = d.name; renderZones(); break;
         case 'manager_connected': setStatus('connected', 'Conectado'); break;
+        case 'manager_disconnected': setStatus('disconnected', 'Desconectado'); break;
+        case 'manager_connecting': setStatus('connecting', 'Conectando…'); break;
+        case 'response': addLog(d); break;
+        case 'raw': addLog({ rtype: 'raw', msg: d.data, time: d.time }); break;
+        case 'history_entry': prependHistory(d.entry); break;
         case 'history_entry_updated': {
           const e = history.find(x => x.id === d.id);
           if (e) {
@@ -850,11 +967,13 @@
           }
           break;
         }
-        case 'manager_disconnected': setStatus('disconnected', 'Desconectado'); break;
-        case 'manager_connecting': setStatus('connecting', 'Conectando…'); break;
-        case 'response': addLog(d); break;
-        case 'raw': addLog({ rtype: 'raw', msg: d.data, time: d.time }); break;
-        case 'history_entry': prependHistory(d.entry); break;
+        case 'saved_added': prependSaved(d.entry); break;
+        case 'saved_removed': removeSaved(d.id); break;
+        case 'saved_updated': {
+          const e = saved.find(x => x.id === d.id);
+          if (e) { e.label = d.label; refreshSavedEl(e); }
+          break;
+        }
       }
     }
 
@@ -931,7 +1050,8 @@
       el.innerHTML = `
     <span class="hist-ico">${ICONS[e.type] || '•'}</span>
     <div class="hist-body">
-      <div class="hist-label">${esc(LABELS[e.type] || e.type)}
+      <div class="hist-label">
+        <span>${esc(LABELS[e.type] || e.type)}</span>
         <span class="edit-ico" style="opacity:.6" onclick="event.stopPropagation();renameHistory(${e.id})">✎</span>
       </div>
       ${param ? `<div class="hist-param">${esc(param)}</div>` : ''}
@@ -955,6 +1075,145 @@
       else if (e.type === 'update') sendUpdate();
     }
     function clearHistory() { history = []; const l = document.getElementById('history'); l.querySelectorAll('.hist').forEach(e => e.remove()); document.getElementById('history-empty').style.display = ''; }
+
+    // ── Saved gallery ──
+    const SAVE_ICONS = { audio: '🔊', yt: '▶️', tts: '💬', vol: '🎚️' };
+    const SAVE_LABELS = { audio: 'Audio', yt: 'YouTube', tts: 'TTS', vol: 'Volumen' };
+
+    function prependSaved(entry) {
+      saved.unshift(entry);
+      if (saved.length > 200) saved.pop();
+      const list = document.getElementById('saved');
+      document.getElementById('saved-empty').style.display = 'none';
+      list.insertBefore(makeSaved(entry), list.firstChild);
+      updateSavedCount();
+    }
+
+    function makeSaved(e) {
+      const el = document.createElement('div');
+      el.className = 'hist';
+      el.dataset.id = e.id;
+      let param = e.label || '';
+      if (!param) {
+        if (e.type === 'audio' || e.type === 'yt') param = (e.params && e.params.url) || '';
+        else if (e.type === 'tts') param = (e.params && e.params.txt) || '';
+        else if (e.type === 'vol') param = Math.round(((e.params && e.params.val) || 0) * 100) + '%';
+      }
+      el.innerHTML = `
+        <span class="hist-ico">${SAVE_ICONS[e.type] || '•'}</span>
+        <div class="hist-body">
+          <div class="hist-label">
+            <span>${esc(SAVE_LABELS[e.type] || e.type)}</span>
+            <span class="edit-ico" style="opacity:.6" onclick="event.stopPropagation();renameSaved(${e.id})">✎</span>
+          </div>
+          ${param ? `<div class="hist-param">${esc(param)}</div>` : ''}
+          <div class="hist-meta">${esc(e.added || '')}</div>
+        </div>
+        <button class="hist-run" onclick="sendSaved(${e.id})" title="Enviar">▶</button>
+        <button class="hist-run" style="color:var(--red)" onclick="deleteSaved(${e.id})" title="Borrar">🗑</button>`;
+      return el;
+    }
+
+    function refreshSavedEl(e) {
+      const el = document.querySelector(`.hist[data-id="${e.id}"]`);
+      if (el) el.replaceWith(makeSaved(e));
+    }
+
+    function removeSaved(id) {
+      saved = saved.filter(x => x.id !== id);
+      const el = document.querySelector(`.hist[data-id="${id}"]`);
+      if (el) el.remove();
+      updateSavedCount();
+    }
+
+    function updateSavedCount() {
+      document.getElementById('saved-count').textContent = saved.length;
+      document.getElementById('saved-empty').style.display = saved.length ? 'none' : '';
+    }
+
+    async function sendSaved(id) {
+      const r = await api('/api/saved/send', { id });
+      if (r.ok) toast(`Enviado → ${nameOf(r.target)}`, 'ok');
+    }
+
+    async function deleteSaved(id) {
+      const r = await api(`/api/saved/${id}`, {}, 'DELETE');
+      if (r.ok) toast('Eliminado', 'info');
+    }
+
+    function renameSaved(id) {
+      const e = saved.find(x => x.id === id); if (!e) return;
+      openRename('Renombrar guardado', e.label || SAVE_LABELS[e.type] || '', async (label) => {
+        const r = await api('/api/saved/rename', { id, label });
+        if (r.ok) { e.label = label; refreshSavedEl(e); toast('Renombrado', 'ok'); }
+      });
+    }
+
+    function openSaveNew(prefill) {
+      const t = (prefill && prefill.type) || 'audio';
+      document.getElementById('save-type').value = t;
+      document.getElementById('save-value').value = (prefill && prefill.value) || '';
+      document.getElementById('save-label').value = (prefill && prefill.label) || '';
+      document.getElementById('save-overlay').classList.add('open');
+      document.getElementById('save-confirm').onclick = async () => {
+        const type = document.getElementById('save-type').value;
+        const value = document.getElementById('save-value').value.trim();
+        const label = document.getElementById('save-label').value.trim();
+        if (!value) return toast('Valor vacío', 'err');
+        let params;
+        if (type === 'audio' || type === 'yt') params = { url: value };
+        else if (type === 'tts') params = { txt: value };
+        else if (type === 'vol') {
+          const v = parseFloat(value); if (isNaN(v) || v < 0 || v > 1) return toast('Volumen 0–1', 'err');
+          params = { val: v };
+        }
+        const r = await api('/api/saved', { type, params, label });
+        if (r.ok) { closeOverlay('save-overlay'); toast('Guardado', 'ok'); }
+      };
+    }
+
+    function saveCurrent() {
+      const a = val('audio-url'), y = val('yt-url'), t = val('tts-txt');
+      let prefill = null;
+      if (a) prefill = { type: 'audio', value: a };
+      else if (y) prefill = { type: 'yt', value: y };
+      else if (t) prefill = { type: 'tts', value: t };
+      else prefill = { type: 'vol', value: document.getElementById('vol').value };
+      openSaveNew(prefill);
+    }
+
+    // ── Broadcast ──
+    function openBroadcast() {
+      const count = Object.keys(zones).length;
+      document.getElementById('broadcast-count').textContent = count;
+      if (!count) return toast('Sin listeners conectados', 'err');
+      const typeSel = document.getElementById('broadcast-type');
+      const valWrap = document.getElementById('broadcast-value-wrap');
+      const valInp = document.getElementById('broadcast-value');
+      const toggleValue = () => { valWrap.style.display = typeSel.value === 'stop' ? 'none' : ''; };
+      toggleValue();
+      typeSel.onchange = toggleValue;
+      valInp.value = '';
+      document.getElementById('broadcast-confirm').onclick = async () => {
+        const type = typeSel.value;
+        const value = valInp.value.trim();
+        let params = {};
+        if (type === 'audio' || type === 'yt') {
+          if (!value) return toast('URL vacía', 'err');
+          params = { url: value };
+        } else if (type === 'tts') {
+          if (!value) return toast('Mensaje vacío', 'err');
+          params = { txt: value };
+        } else if (type === 'vol') {
+          const v = parseFloat(value);
+          if (isNaN(v) || v < 0 || v > 1) return toast('Volumen 0–1', 'err');
+          params = { val: v };
+        }
+        const r = await api('/api/broadcast', { type, params });
+        if (r.ok) { closeOverlay('broadcast-overlay'); toast(`Enviado a ${r.count} listener(s)`, 'ok'); }
+      };
+      document.getElementById('broadcast-overlay').classList.add('open');
+    }
 
     // ── Rename (zonas + historial) ──
     function renameZone(id) {
@@ -998,9 +1257,17 @@
     }
     async function switchTarget(id) { const r = await api('/api/switch', { id }); if (r.ok) target = r.current, renderZones(); }
 
-    async function api(path, body) {
-      try { const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); const d = await res.json(); if (d.error) toast(d.error, 'err'); return d; }
-      catch { toast('Error de red', 'err'); return {}; }
+    async function api(path, body, method = 'POST') {
+      try {
+        const res = await fetch(path, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: method === 'GET' ? undefined : JSON.stringify(body || {}),
+        });
+        const d = await res.json();
+        if (d.error) toast(d.error, 'err');
+        return d;
+      } catch { toast('Error de red', 'err'); return {}; }
     }
 
     // ── UI helpers ──
@@ -1024,6 +1291,7 @@
         setStatus(s.manager_connected ? 'connected' : 'connecting', s.manager_connected ? 'Conectado' : 'Conectando…');
         renderZones();
         (s.history || []).forEach(prependHistory);
+        (s.saved || []).forEach(prependSaved);
       } catch { }
       startSSE();
     })();

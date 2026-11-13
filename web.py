@@ -29,6 +29,9 @@ sock_lock = threading.Lock()
 action_history = []
 history_lock = threading.Lock()
 
+saved_items = []          # galeria: [{id, type, params, label, added}]
+saved_lock = threading.Lock()
+
 manager_connected = False
 manager_lock = threading.Lock()   # para leer manager_connected de forma segura
 
@@ -66,6 +69,27 @@ def snapshot_listeners():
     with listeners_lock:
         return {lid: {"addr": a, "name": listener_names.get(lid, "")}
                 for lid, a in available_listeners.items()}
+
+
+def snapshot_saved():
+    with saved_lock:
+        return list(saved_items)
+
+
+def add_saved(item_type, params, label=""):
+    entry = {
+        "id": int(time.time() * 1000),
+        "type": item_type,
+        "params": params,
+        "label": label or "",
+        "added": datetime.now().strftime("%H:%M:%S"),
+    }
+    with saved_lock:
+        saved_items.insert(0, entry)
+        if len(saved_items) > 200:
+            saved_items.pop()
+    push_event({"event": "saved_added", "entry": entry})
+    return entry
 
 
 def handle_event(msg):
@@ -218,6 +242,27 @@ def send_packet(packet):
     return t
 
 
+def send_to_all(packet):
+    with listeners_lock:
+        ids = list(available_listeners.keys())
+    if not ids:
+        return []
+    ok = []
+    with sock_lock:
+        s = sock
+    if s is None:
+        return []
+    for lid in ids:
+        pkt = dict(packet)
+        pkt["target"] = lid
+        try:
+            s.sendall((json.dumps(pkt) + "\n").encode("utf-8"))
+            ok.append(lid)
+        except Exception:
+            pass
+    return ok
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -236,6 +281,7 @@ def state():
         "current_target": t,
         "history": h,
         "manager_connected": mc,
+        "saved": snapshot_saved(),
     })
 
 
@@ -293,7 +339,7 @@ def yt():
     target = send_packet({"type": 5, "url": url})
     if target is None:
         return jsonify({"error": "Manager no conectado"}), 503
-    add_history("yt", {"url": url}, target)   # tipo correcto para el HTML
+    add_history("yt", {"url": url}, target)
     return jsonify({"ok": True, "target": target})
 
 
@@ -329,7 +375,7 @@ def switch():
     return jsonify({"ok": True, "current": lid})
 
 
-# ── Faltaban: rename de zona y rename de historial ────────────────────────
+# ── Rename de zona y de historial ─────────────────────────────────────────
 @app.route("/api/rename", methods=["POST"])
 def rename():
     body = request.json or {}
@@ -359,6 +405,110 @@ def history_rename():
         entry["label"] = label
     push_event({"event": "history_entry_updated", "id": hid, "label": label})
     return jsonify({"ok": True, "id": hid, "label": label})
+
+
+# ── Galeria de guardados ──────────────────────────────────────────────────
+@app.route("/api/saved", methods=["GET"])
+def saved_list():
+    return jsonify({"items": snapshot_saved()})
+
+
+@app.route("/api/saved", methods=["POST"])
+def saved_add():
+    body = request.json or {}
+    item_type = (body.get("type") or "").strip()
+    params = body.get("params") or {}
+    label = (body.get("label") or "").strip()
+    if item_type not in ("audio", "yt", "tts", "vol"):
+        return jsonify({"error": "Tipo inválido"}), 400
+    if item_type in ("audio", "yt") and not (params.get("url") or "").strip():
+        return jsonify({"error": "URL vacía"}), 400
+    if item_type == "tts" and not (params.get("txt") or "").strip():
+        return jsonify({"error": "Mensaje vacío"}), 400
+    if item_type == "vol" and params.get("val") in (None, ""):
+        return jsonify({"error": "Volumen vacío"}), 400
+    entry = add_saved(item_type, params, label)
+    return jsonify({"ok": True, "entry": entry})
+
+
+@app.route("/api/saved/<int:item_id>", methods=["DELETE"])
+def saved_delete(item_id):
+    with saved_lock:
+        before = len(saved_items)
+        saved_items[:] = [x for x in saved_items if x["id"] != item_id]
+        removed = len(saved_items) != before
+    if not removed:
+        return jsonify({"error": "No encontrado"}), 404
+    push_event({"event": "saved_removed", "id": item_id})
+    return jsonify({"ok": True, "id": item_id})
+
+
+@app.route("/api/saved/rename", methods=["POST"])
+def saved_rename():
+    body = request.json or {}
+    item_id = body.get("id")
+    label = (body.get("label") or "").strip()
+    if item_id is None or not label:
+        return jsonify({"error": "Datos incompletos"}), 400
+    with saved_lock:
+        entry = next((e for e in saved_items if e["id"] == item_id), None)
+        if entry is None:
+            return jsonify({"error": "No encontrado"}), 404
+        entry["label"] = label
+    push_event({"event": "saved_updated", "id": item_id, "label": label})
+    return jsonify({"ok": True, "id": item_id, "label": label})
+
+
+@app.route("/api/saved/send", methods=["POST"])
+def saved_send():
+    """Reproduce un guardado. target_id opcional (default = current_target)."""
+    body = request.json or {}
+    item_id = body.get("id")
+    target_override = (body.get("target") or "").strip() or None
+    with saved_lock:
+        entry = next((e for e in saved_items if e["id"] == item_id), None)
+    if entry is None:
+        return jsonify({"error": "No encontrado"}), 404
+
+    t_type = entry["type"]
+    params = entry["params"]
+    packet = {"type": {"audio": 1, "tts": 2, "vol": 3, "yt": 5}[t_type]}
+    packet.update({k: v for k, v in params.items()})
+
+    global current_target
+    if target_override:
+        with listeners_lock:
+            if target_override not in available_listeners:
+                return jsonify({"error": "Listener desconocido"}), 400
+        with target_lock:
+            current_target = target_override
+
+    target = send_packet(packet)
+    if target is None:
+        return jsonify({"error": "Manager no conectado"}), 503
+    add_history(t_type, params, target, label=entry.get("label") or "")
+    return jsonify({"ok": True, "target": target})
+
+
+# ── Broadcast a todos los listeners ───────────────────────────────────────
+@app.route("/api/broadcast", methods=["POST"])
+def broadcast():
+    body = request.json or {}
+    kind = (body.get("type") or "").strip()
+    params = body.get("params") or {}
+
+    if kind not in ("audio", "yt", "tts", "vol", "stop"):
+        return jsonify({"error": "Tipo inválido"}), 400
+
+    packet = {"type": {"audio": 1, "tts": 2, "vol": 3, "stop": 4, "yt": 5}[kind]}
+    packet.update(params)
+
+    sent = send_to_all(packet)
+    if not sent:
+        return jsonify({"error": "Sin listeners conectados"}), 503
+
+    add_history(kind, params, "TODOS")
+    return jsonify({"ok": True, "sent": sent, "count": len(sent)})
 
 
 @app.route("/stream")
