@@ -28,6 +28,7 @@ def send_manager(sock, payload):
 def resource_path(relative_path):
     if hasattr(sys, "_MEIPASS"):
         return os.path.join(sys._MEIPASS, relative_path) # type: ignore
+
     return os.path.join(os.path.abspath("."), relative_path)
 
 
@@ -43,7 +44,8 @@ def get_ffplay():
     except Exception:
         pass
 
-    bundled = resource_path("ffplay.exe")
+    bundled = resource_path(os.path.join("ffmpeg-bin", "ffplay.exe"))
+
     if os.path.exists(bundled):
         return bundled
 
