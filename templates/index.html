@@ -841,6 +841,15 @@
         case 'zone_renamed':
           if (zones[d.id]) zones[d.id].name = d.name; renderZones(); break;
         case 'manager_connected': setStatus('connected', 'Conectado'); break;
+        case 'history_entry_updated': {
+          const e = history.find(x => x.id === d.id);
+          if (e) {
+            e.label = d.label;
+            const el = document.querySelector(`.hist[data-id="${d.id}"]`);
+            if (el) el.replaceWith(makeHist(e));
+          }
+          break;
+        }
         case 'manager_disconnected': setStatus('disconnected', 'Desconectado'); break;
         case 'manager_connecting': setStatus('connecting', 'Conectando…'); break;
         case 'response': addLog(d); break;
@@ -936,7 +945,12 @@
       if (e.type === 'audio') { document.getElementById('audio-url').value = (e.params && e.params.url) || ''; sendAudio(); }
       else if (e.type === 'yt') { document.getElementById('yt-url').value = (e.params && e.params.url) || ''; sendYT(); }
       else if (e.type === 'tts') { document.getElementById('tts-txt').value = (e.params && e.params.txt) || ''; sendTTS(); }
-      else if (e.type === 'vol') { document.getElementById('vol').value = (e.params && e.params.val) || 1; updVol(); sendVol(); }
+      else if (e.type === 'vol') {
+        const v = (e.params && e.params.val) || 1;
+        document.getElementById('vol').value = v;
+        updVol();
+        sendVol();
+      }
       else if (e.type === 'stop') sendStop();
       else if (e.type === 'update') sendUpdate();
     }
@@ -1009,7 +1023,7 @@
         zones = normalize(s.listeners); target = s.current_target || null;
         setStatus(s.manager_connected ? 'connected' : 'connecting', s.manager_connected ? 'Conectado' : 'Conectando…');
         renderZones();
-        (s.history || []).reverse().forEach(prependHistory);
+        (s.history || []).forEach(prependHistory);
       } catch { }
       startSSE();
     })();

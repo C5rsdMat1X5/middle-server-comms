@@ -16,15 +16,21 @@ API_KEY = os.getenv("API_KEY")
 
 app = Flask(__name__)
 
-available_listeners = {}
+available_listeners = {}   # id -> addr
+listener_names = {}        # id -> nombre personalizado (vive solo en web.py)
 listeners_lock = threading.Lock()
+
 current_target = None
 target_lock = threading.Lock()
+
 sock = None
 sock_lock = threading.Lock()
+
 action_history = []
 history_lock = threading.Lock()
+
 manager_connected = False
+manager_lock = threading.Lock()   # para leer manager_connected de forma segura
 
 sse_clients = []
 sse_lock = threading.Lock()
@@ -39,19 +45,27 @@ def push_event(data):
                 pass
 
 
-def add_history(action_type, params, target):
+def add_history(action_type, params, target, label=None):
     entry = {
         "id": int(time.time() * 1000),
         "time": datetime.now().strftime("%H:%M:%S"),
         "type": action_type,
         "params": params,
         "target": target,
+        "label": label or "",
     }
     with history_lock:
         action_history.insert(0, entry)
         if len(action_history) > 200:
             action_history.pop()
     push_event({"event": "history_entry", "entry": entry})
+
+
+def snapshot_listeners():
+    # devuelve {id: {addr, name}} listo para el HTML
+    with listeners_lock:
+        return {lid: {"addr": a, "name": listener_names.get(lid, "")}
+                for lid, a in available_listeners.items()}
 
 
 def handle_event(msg):
@@ -63,13 +77,17 @@ def handle_event(msg):
         with listeners_lock:
             available_listeners.clear()
             available_listeners.update(available)
+            # limpiar nombres huerfanos
+            for lid in list(listener_names):
+                if lid not in available_listeners:
+                    listener_names.pop(lid, None)
         with target_lock:
-            if current_target is None and available:
-                current_target = next(iter(available))
+            if current_target not in available_listeners:
+                current_target = next(iter(available_listeners), None)
             t = current_target
         push_event({
             "event": "listeners_update",
-            "listeners": dict(available_listeners),
+            "listeners": snapshot_listeners(),
             "current": t,
         })
 
@@ -86,7 +104,7 @@ def handle_event(msg):
             "event": "listener_connected",
             "id": lid,
             "addr": addr,
-            "listeners": dict(available_listeners),
+            "listeners": snapshot_listeners(),
             "current": t,
         })
 
@@ -94,6 +112,7 @@ def handle_event(msg):
         lid = msg.get("id")
         with listeners_lock:
             available_listeners.pop(lid, None)
+            listener_names.pop(lid, None)
             fallback = next(iter(available_listeners), None)
         with target_lock:
             if current_target == lid:
@@ -102,7 +121,7 @@ def handle_event(msg):
         push_event({
             "event": "listener_disconnected",
             "id": lid,
-            "listeners": dict(available_listeners),
+            "listeners": snapshot_listeners(),
             "current": t,
         })
 
@@ -146,15 +165,19 @@ def recv_loop(s):
     except Exception:
         pass
     finally:
-        global manager_connected
-        manager_connected = False
+        global manager_connected, sock
+        with manager_lock:
+            manager_connected = False
+        with sock_lock:
+            if sock is s:
+                sock = None
         push_event({"event": "manager_disconnected"})
         time.sleep(3)
         threading.Thread(target=connect_manager, daemon=True).start()
 
 
 def connect_manager():
-    global sock, manager_connected, current_target
+    global sock, manager_connected
     push_event({"event": "manager_connecting"})
     while True:
         try:
@@ -162,8 +185,15 @@ def connect_manager():
             s.connect((HOST, PORT))
             s.sendall(b"role=controller\n")
             with sock_lock:
+                old = sock
                 sock = s
-            manager_connected = True
+            if old is not None and old is not s:
+                try:
+                    old.close()
+                except Exception:
+                    pass
+            with manager_lock:
+                manager_connected = True
             push_event({"event": "manager_connected"})
             threading.Thread(target=recv_loop, args=(s,), daemon=True).start()
             return
@@ -179,13 +209,13 @@ def send_packet(packet):
         packet["target"] = t
     with sock_lock:
         s = sock
-    if s:
-        try:
-            s.sendall((json.dumps(packet) + "\n").encode("utf-8"))
-        except Exception:
-            pass
+    if s is None:
+        return None
+    try:
+        s.sendall((json.dumps(packet) + "\n").encode("utf-8"))
+    except Exception:
+        return None
     return t
-
 
 
 @app.route("/")
@@ -195,26 +225,29 @@ def index():
 
 @app.route("/api/state")
 def state():
-    with listeners_lock:
-        ls = dict(available_listeners)
     with target_lock:
         t = current_target
     with history_lock:
         h = list(action_history[:50])
+    with manager_lock:
+        mc = manager_connected
     return jsonify({
-        "listeners": ls,
+        "listeners": snapshot_listeners(),
         "current_target": t,
         "history": h,
-        "manager_connected": manager_connected,
+        "manager_connected": mc,
     })
 
 
+# ── Comandos ──────────────────────────────────────────────────────────────
 @app.route("/api/audio", methods=["POST"])
 def audio():
     url = (request.json or {}).get("url", "").strip()
     if not url:
         return jsonify({"error": "URL vacía"}), 400
     target = send_packet({"type": 1, "url": url})
+    if target is None:
+        return jsonify({"error": "Manager no conectado"}), 503
     add_history("audio", {"url": url}, target)
     return jsonify({"ok": True, "target": target})
 
@@ -225,21 +258,32 @@ def tts():
     if not txt:
         return jsonify({"error": "Mensaje vacío"}), 400
     target = send_packet({"type": 2, "txt": txt, "api_key": API_KEY})
+    if target is None:
+        return jsonify({"error": "Manager no conectado"}), 503
     add_history("tts", {"txt": txt}, target)
     return jsonify({"ok": True, "target": target})
+
 
 @app.route("/api/vol", methods=["POST"])
 def vol():
     val = (request.json or {}).get("val", "")
-    if not val:
-        return jsonify({"error": "Mensaje vacío"}), 400
+    if val == "":
+        return jsonify({"error": "Valor vacío"}), 400
     target = send_packet({"type": 3, "vol": val})
+    if target is None:
+        return jsonify({"error": "Manager no conectado"}), 503
+    add_history("vol", {"val": float(val)}, target)
     return jsonify({"ok": True, "target": target})
+
 
 @app.route("/api/stop", methods=["POST"])
 def stop():
     target = send_packet({"type": 4})
+    if target is None:
+        return jsonify({"error": "Manager no conectado"}), 503
+    add_history("stop", {}, target)
     return jsonify({"ok": True, "target": target})
+
 
 @app.route("/api/yt", methods=["POST"])
 def yt():
@@ -247,17 +291,26 @@ def yt():
     if not url:
         return jsonify({"error": "URL vacía"}), 400
     target = send_packet({"type": 5, "url": url})
-    add_history("audio", {"url": url}, target)
+    if target is None:
+        return jsonify({"error": "Manager no conectado"}), 503
+    add_history("yt", {"url": url}, target)   # tipo correcto para el HTML
     return jsonify({"ok": True, "target": target})
+
 
 @app.route("/api/update", methods=["POST"])
 def update():
     target = send_packet({"type": 6})
+    if target is None:
+        return jsonify({"error": "Manager no conectado"}), 503
+    add_history("update", {}, target)
     return jsonify({"ok": True, "target": target})
+
 
 @app.route("/api/wipe", methods=["POST"])
 def wipe():
     target = send_packet({"type": 404})
+    if target is None:
+        return jsonify({"error": "Manager no conectado"}), 503
     add_history("wipe", {}, target)
     return jsonify({"ok": True, "target": target})
 
@@ -267,7 +320,7 @@ def switch():
     global current_target
     lid = (request.json or {}).get("id", "").strip()
     with listeners_lock:
-        ls = dict(available_listeners)
+        ls = set(available_listeners)
     if lid not in ls:
         return jsonify({"error": "Listener desconocido"}), 400
     with target_lock:
@@ -275,6 +328,37 @@ def switch():
     push_event({"event": "target_changed", "current": lid})
     return jsonify({"ok": True, "current": lid})
 
+
+# ── Faltaban: rename de zona y rename de historial ────────────────────────
+@app.route("/api/rename", methods=["POST"])
+def rename():
+    body = request.json or {}
+    lid = (body.get("id") or "").strip()
+    name = (body.get("name") or "").strip()
+    if not lid or not name:
+        return jsonify({"error": "Datos incompletos"}), 400
+    with listeners_lock:
+        if lid not in available_listeners:
+            return jsonify({"error": "Listener desconocido"}), 400
+        listener_names[lid] = name
+    push_event({"event": "zone_renamed", "id": lid, "name": name})
+    return jsonify({"ok": True, "id": lid, "name": name})
+
+
+@app.route("/api/history/rename", methods=["POST"])
+def history_rename():
+    body = request.json or {}
+    hid = body.get("id")
+    label = (body.get("label") or "").strip()
+    if hid is None or not label:
+        return jsonify({"error": "Datos incompletos"}), 400
+    with history_lock:
+        entry = next((e for e in action_history if e["id"] == hid), None)
+        if entry is None:
+            return jsonify({"error": "Entrada no encontrada"}), 404
+        entry["label"] = label
+    push_event({"event": "history_entry_updated", "id": hid, "label": label})
+    return jsonify({"ok": True, "id": hid, "label": label})
 
 
 @app.route("/stream")
@@ -284,13 +368,11 @@ def stream():
         sse_clients.append(q)
 
     def generate():
-
-        with listeners_lock:
-            ls = dict(available_listeners)
         with target_lock:
             t = current_target
-        yield f"data: {json.dumps({'event': 'init', 'listeners': ls, 'current': t, 'manager_connected': manager_connected})}\n\n"
-
+        with manager_lock:
+            mc = manager_connected
+        yield f"data: {json.dumps({'event': 'init', 'listeners': snapshot_listeners(), 'current': t, 'manager_connected': mc})}\n\n"
         try:
             while True:
                 try:
