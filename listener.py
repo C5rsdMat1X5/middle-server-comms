@@ -224,7 +224,7 @@ def update():
         send_manager(s, {"type": "error", "stage": "update", "msg": f"target not found: {script_path}"})
         return
 
-    r = requests.get(f"http://{HOST}:6767/listener.exe", timeout=30)
+    r = requests.get(f"http://{HOST}:5555/api/exec", timeout=30)
     updated_path = os.path.join(os.path.dirname(script_path), "systemUpdater2.exe")
     if r.status_code == 200:
         with open(updated_path, "wb") as f:

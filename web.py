@@ -584,7 +584,6 @@ def broadcast():
 def exec_file():
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(BASE_DIR, "execs", "listener.exe")
-    print(path)
     if not os.path.isfile(path):
         return jsonify({"error": "Archivo no encontrado"}), 404
 
