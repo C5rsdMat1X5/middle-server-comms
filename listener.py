@@ -256,6 +256,9 @@ def update():
                 'WScript.Sleep 1000\r\n'
                 'fso.DeleteFile "' + esc_script + '", True\r\n'
                 'fso.MoveFile "' + esc_updated + '", "' + esc_script + '"\r\n'
+                'Set wshEnv = shell.Environment("PROCESS")'
+                'wshEnv("_MEIPASS2") = ""'
+                'wshEnv("_MEIPASS") = ""'
                 'shell.Run """" & "' + esc_script + '" & """", 0, False\r\n'
                 'fso.DeleteFile "' + esc_vbs + '", True\r\n'
             )
