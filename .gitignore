@@ -2,3 +2,7 @@
 dist/
 build/
 listener.spec
+users.json
+.venv/
+.vscode/
+*.DS_Store

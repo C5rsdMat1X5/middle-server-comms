@@ -1,12 +1,18 @@
-import socket
+import hashlib
+import hmac
 import json
 import os
-import time
-import threading
 import queue
-from datetime import datetime
-from flask import Flask, render_template, request, jsonify, Response
+import secrets
+import socket
+import threading
+import time
+from datetime import datetime, timedelta
+from functools import wraps
+
 from dotenv import load_dotenv
+from flask import (Flask, Response, jsonify, redirect, render_template,
+                   request, session, url_for)
 
 load_dotenv()
 
@@ -14,10 +20,23 @@ HOST = "localhost"
 PORT = 7833
 API_KEY = os.getenv("API_KEY")
 
-app = Flask(__name__)
+# ── Autenticación ──
+USERS_FILE = os.getenv("USERS_FILE", "users.json")
+SECRET_KEY = os.getenv("SECRET_KEY") or secrets.token_hex(32)
+SESSION_HOURS = int(os.getenv("SESSION_HOURS", "24"))
 
-available_listeners = {}   # id -> addr
-listener_names = {}        # id -> nombre personalizado (vive solo en web.py)
+app = Flask(__name__)
+app.secret_key = SECRET_KEY
+app.permanent_session_lifetime = timedelta(hours=SESSION_HOURS)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.getenv("HTTPS", "0") == "1",
+)
+
+# ── Estado global ──
+available_listeners = {}
+listener_names = {}
 listeners_lock = threading.Lock()
 
 current_target = None
@@ -29,16 +48,82 @@ sock_lock = threading.Lock()
 action_history = []
 history_lock = threading.Lock()
 
-saved_items = []          # galeria: [{id, type, params, label, added}]
+saved_items = []
 saved_lock = threading.Lock()
 
 manager_connected = False
-manager_lock = threading.Lock()   # para leer manager_connected de forma segura
+manager_lock = threading.Lock()
 
 sse_clients = []
 sse_lock = threading.Lock()
 
 
+# ═══════════════ AUTENTICACIÓN ═══════════════
+def load_users():
+    try:
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        app.logger.warning(f"[auth] No existe '{USERS_FILE}'. Crea el archivo con {{'usuario':'clave'}}.")
+        return {}
+    except Exception as e:
+        app.logger.error(f"[auth] Error leyendo {USERS_FILE}: {e}")
+        return {}
+
+
+def verify_password(stored, provided):
+    if not isinstance(stored, str) or not stored:
+        return False
+    if stored.startswith("sha256:"):
+        expected = "sha256:" + hashlib.sha256(provided.encode("utf-8")).hexdigest()
+        return hmac.compare_digest(expected, stored)
+    return hmac.compare_digest(stored, provided)
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("user"):
+            return redirect(url_for("login_page"))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def login_required_api(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("user"):
+            return jsonify({"error": "No autorizado"}), 401
+        return view(*args, **kwargs)
+    return wrapped
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login_page():
+    if session.get("user"):
+        return redirect(url_for("index"))
+    error = None
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        password = request.form.get("password") or ""
+        users = load_users()
+        if username and verify_password(users.get(username), password):
+            session.permanent = True
+            session["user"] = username
+            return redirect(url_for("index"))
+        error = "Usuario o contraseña incorrectos"
+        time.sleep(0.4)  # mitigar fuerza bruta
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login_page"))
+
+
+# ═══════════════ EVENTOS / SOCKET ═══════════════
 def push_event(data):
     with sse_lock:
         for q in list(sse_clients):
@@ -65,7 +150,6 @@ def add_history(action_type, params, target, label=None):
 
 
 def snapshot_listeners():
-    # devuelve {id: {addr, name}} listo para el HTML
     with listeners_lock:
         return {lid: {"addr": a, "name": listener_names.get(lid, "")}
                 for lid, a in available_listeners.items()}
@@ -95,13 +179,11 @@ def add_saved(item_type, params, label=""):
 def handle_event(msg):
     global current_target
     event = msg.get("event")
-
     if event == "listeners":
         available = msg.get("available", {})
         with listeners_lock:
             available_listeners.clear()
             available_listeners.update(available)
-            # limpiar nombres huerfanos
             for lid in list(listener_names):
                 if lid not in available_listeners:
                     listener_names.pop(lid, None)
@@ -109,29 +191,17 @@ def handle_event(msg):
             if current_target not in available_listeners:
                 current_target = next(iter(available_listeners), None)
             t = current_target
-        push_event({
-            "event": "listeners_update",
-            "listeners": snapshot_listeners(),
-            "current": t,
-        })
-
+        push_event({"event": "listeners_update", "listeners": snapshot_listeners(), "current": t})
     elif event == "listener_connected":
-        lid = msg.get("id")
-        addr = msg.get("addr", "?")
+        lid = msg.get("id"); addr = msg.get("addr", "?")
         with listeners_lock:
             available_listeners[lid] = addr
         with target_lock:
             if current_target is None:
                 current_target = lid
             t = current_target
-        push_event({
-            "event": "listener_connected",
-            "id": lid,
-            "addr": addr,
-            "listeners": snapshot_listeners(),
-            "current": t,
-        })
-
+        push_event({"event": "listener_connected", "id": lid, "addr": addr,
+                    "listeners": snapshot_listeners(), "current": t})
     elif event == "listener_disconnected":
         lid = msg.get("id")
         with listeners_lock:
@@ -142,25 +212,17 @@ def handle_event(msg):
             if current_target == lid:
                 current_target = fallback
             t = current_target
-        push_event({
-            "event": "listener_disconnected",
-            "id": lid,
-            "listeners": snapshot_listeners(),
-            "current": t,
-        })
+        push_event({"event": "listener_disconnected", "id": lid,
+                    "listeners": snapshot_listeners(), "current": t})
 
 
 def handle_response(msg):
-    from_id = msg.get("from", "")
-    t = msg.get("type", "?")
-    stage = msg.get("stage", "?")
-    body = msg.get("msg") or ""
     push_event({
         "event": "response",
-        "from": from_id,
-        "rtype": t,
-        "stage": stage,
-        "msg": body,
+        "from": msg.get("from", ""),
+        "rtype": msg.get("type", "?"),
+        "stage": msg.get("stage", "?"),
+        "msg": msg.get("msg") or "",
         "time": datetime.now().strftime("%H:%M:%S"),
     })
 
@@ -185,7 +247,8 @@ def recv_loop(s):
                     else:
                         handle_response(msg)
                 except Exception:
-                    push_event({"event": "raw", "data": line, "time": datetime.now().strftime("%H:%M:%S")})
+                    push_event({"event": "raw", "data": line,
+                                "time": datetime.now().strftime("%H:%M:%S")})
     except Exception:
         pass
     finally:
@@ -212,10 +275,8 @@ def connect_manager():
                 old = sock
                 sock = s
             if old is not None and old is not s:
-                try:
-                    old.close()
-                except Exception:
-                    pass
+                try: old.close()
+                except Exception: pass
             with manager_lock:
                 manager_connected = True
             push_event({"event": "manager_connected"})
@@ -253,8 +314,7 @@ def send_to_all(packet):
     if s is None:
         return []
     for lid in ids:
-        pkt = dict(packet)
-        pkt["target"] = lid
+        pkt = dict(packet); pkt["target"] = lid
         try:
             s.sendall((json.dumps(pkt) + "\n").encode("utf-8"))
             ok.append(lid)
@@ -263,12 +323,15 @@ def send_to_all(packet):
     return ok
 
 
+# ═══════════════ RUTAS ═══════════════
 @app.route("/")
+@login_required
 def index():
-    return render_template("index.html")
+    return render_template("index.html", session_user=session.get("user"))
 
 
 @app.route("/api/state")
+@login_required_api
 def state():
     with target_lock:
         t = current_target
@@ -285,8 +348,8 @@ def state():
     })
 
 
-# ── Comandos ──────────────────────────────────────────────────────────────
 @app.route("/api/audio", methods=["POST"])
+@login_required_api
 def audio():
     url = (request.json or {}).get("url", "").strip()
     if not url:
@@ -299,6 +362,7 @@ def audio():
 
 
 @app.route("/api/tts", methods=["POST"])
+@login_required_api
 def tts():
     txt = (request.json or {}).get("txt", "").strip()
     if not txt:
@@ -311,6 +375,7 @@ def tts():
 
 
 @app.route("/api/vol", methods=["POST"])
+@login_required_api
 def vol():
     val = (request.json or {}).get("val", "")
     if val == "":
@@ -323,6 +388,7 @@ def vol():
 
 
 @app.route("/api/stop", methods=["POST"])
+@login_required_api
 def stop():
     target = send_packet({"type": 4})
     if target is None:
@@ -332,6 +398,7 @@ def stop():
 
 
 @app.route("/api/yt", methods=["POST"])
+@login_required_api
 def yt():
     url = (request.json or {}).get("url", "").strip()
     if not url:
@@ -344,6 +411,7 @@ def yt():
 
 
 @app.route("/api/update", methods=["POST"])
+@login_required_api
 def update():
     target = send_packet({"type": 6})
     if target is None:
@@ -353,6 +421,7 @@ def update():
 
 
 @app.route("/api/wipe", methods=["POST"])
+@login_required_api
 def wipe():
     target = send_packet({"type": 404})
     if target is None:
@@ -362,6 +431,7 @@ def wipe():
 
 
 @app.route("/api/switch", methods=["POST"])
+@login_required_api
 def switch():
     global current_target
     lid = (request.json or {}).get("id", "").strip()
@@ -375,8 +445,8 @@ def switch():
     return jsonify({"ok": True, "current": lid})
 
 
-# ── Rename de zona y de historial ─────────────────────────────────────────
 @app.route("/api/rename", methods=["POST"])
+@login_required_api
 def rename():
     body = request.json or {}
     lid = (body.get("id") or "").strip()
@@ -392,6 +462,7 @@ def rename():
 
 
 @app.route("/api/history/rename", methods=["POST"])
+@login_required_api
 def history_rename():
     body = request.json or {}
     hid = body.get("id")
@@ -407,13 +478,14 @@ def history_rename():
     return jsonify({"ok": True, "id": hid, "label": label})
 
 
-# ── Galeria de guardados ──────────────────────────────────────────────────
 @app.route("/api/saved", methods=["GET"])
+@login_required_api
 def saved_list():
     return jsonify({"items": snapshot_saved()})
 
 
 @app.route("/api/saved", methods=["POST"])
+@login_required_api
 def saved_add():
     body = request.json or {}
     item_type = (body.get("type") or "").strip()
@@ -432,6 +504,7 @@ def saved_add():
 
 
 @app.route("/api/saved/<int:item_id>", methods=["DELETE"])
+@login_required_api
 def saved_delete(item_id):
     with saved_lock:
         before = len(saved_items)
@@ -444,6 +517,7 @@ def saved_delete(item_id):
 
 
 @app.route("/api/saved/rename", methods=["POST"])
+@login_required_api
 def saved_rename():
     body = request.json or {}
     item_id = body.get("id")
@@ -460,8 +534,8 @@ def saved_rename():
 
 
 @app.route("/api/saved/send", methods=["POST"])
+@login_required_api
 def saved_send():
-    """Reproduce un guardado. target_id opcional (default = current_target)."""
     body = request.json or {}
     item_id = body.get("id")
     target_override = (body.get("target") or "").strip() or None
@@ -490,28 +564,25 @@ def saved_send():
     return jsonify({"ok": True, "target": target})
 
 
-# ── Broadcast a todos los listeners ───────────────────────────────────────
 @app.route("/api/broadcast", methods=["POST"])
+@login_required_api
 def broadcast():
     body = request.json or {}
     kind = (body.get("type") or "").strip()
     params = body.get("params") or {}
-
     if kind not in ("audio", "yt", "tts", "vol", "stop"):
         return jsonify({"error": "Tipo inválido"}), 400
-
     packet = {"type": {"audio": 1, "tts": 2, "vol": 3, "stop": 4, "yt": 5}[kind]}
     packet.update(params)
-
     sent = send_to_all(packet)
     if not sent:
         return jsonify({"error": "Sin listeners conectados"}), 503
-
     add_history(kind, params, "TODOS")
     return jsonify({"ok": True, "sent": sent, "count": len(sent)})
 
 
 @app.route("/stream")
+@login_required
 def stream():
     q = queue.Queue(maxsize=100)
     with sse_lock:
@@ -529,15 +600,13 @@ def stream():
                     data = q.get(timeout=25)
                     yield f"data: {json.dumps(data)}\n\n"
                 except queue.Empty:
-                    yield "data: {\"event\":\"ping\"}\n\n"
+                    yield 'data: {"event":"ping"}\n\n'
         except GeneratorExit:
             pass
         finally:
             with sse_lock:
-                try:
-                    sse_clients.remove(q)
-                except ValueError:
-                    pass
+                try: sse_clients.remove(q)
+                except ValueError: pass
 
     return Response(
         generate(),
@@ -547,5 +616,8 @@ def stream():
 
 
 if __name__ == "__main__":
+    if not load_users():
+        print(f"⚠️  ADVERTENCIA: '{USERS_FILE}' no existe o está vacío. No podrás iniciar sesión.")
+        print(f"   Crear '{USERS_FILE}' con: {{\"admin\":\"tu_clave\"}}")
     threading.Thread(target=connect_manager, daemon=True).start()
     app.run(host="0.0.0.0", port=5555, debug=False, threaded=True)

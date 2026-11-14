@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Acceder · Audio Control</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#fafafa;--surface:#fff;--border:#e8e8e8;--text:#0a0a0a;
+    --text-muted:#737373;--text-faint:#a3a3a3;--danger:#b91c1c;--danger-bg:#fef2f2;
+  }
+  body{
+    background:var(--bg);color:var(--text);font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+    font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;
+    min-height:100dvh;display:grid;place-items:center;padding:20px;
+    padding-bottom:calc(20px + env(safe-area-inset-bottom));
+  }
+  .login-card{
+    width:100%;max-width:380px;background:var(--surface);border:1px solid var(--border);
+    border-radius:16px;padding:40px 32px;box-shadow:0 4px 24px rgba(0,0,0,.05);
+    animation:cardIn 500ms cubic-bezier(.4,0,.2,1);
+  }
+  @keyframes cardIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+  .logo{
+    width:44px;height:44px;background:var(--text);border-radius:11px;
+    margin-bottom:24px;position:relative;
+  }
+  .logo::after{
+    content:'';position:absolute;inset:11px;background:var(--surface);border-radius:4px;
+    clip-path:polygon(0 20%,100% 0,100% 100%,0 80%);
+  }
+  h1{font-size:22px;font-weight:700;letter-spacing:-.02em;margin-bottom:6px}
+  .sub{color:var(--text-muted);font-size:13px;margin-bottom:28px}
+  .field{display:block;margin-bottom:16px}
+  .field span{
+    display:block;font-size:11px;font-weight:700;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--text-muted);margin-bottom:7px;
+  }
+  .field input{
+    width:100%;padding:12px 14px;background:var(--surface);border:1px solid var(--border);
+    border-radius:9px;font-family:inherit;font-size:14px;color:var(--text);
+    outline:none;transition:border-color 180ms,box-shadow 180ms;
+  }
+  .field input:focus{border-color:var(--text);box-shadow:0 0 0 3px rgba(10,10,10,.06)}
+  .submit{
+    width:100%;padding:13px;background:var(--text);color:var(--surface);border:none;
+    border-radius:9px;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;
+    margin-top:8px;transition:background 180ms,transform 100ms;
+  }
+  .submit:hover{background:#1f1f1f}
+  .submit:active{transform:scale(.98)}
+  .error{
+    background:var(--danger-bg);color:var(--danger);padding:11px 14px;
+    border-radius:9px;font-size:13px;margin-bottom:16px;border:1px solid #fecaca;
+    animation:cardIn 300ms;
+  }
+  .footer{text-align:center;color:var(--text-faint);font-size:11px;margin-top:22px;letter-spacing:.04em}
+</style>
+</head>
+<body>
+  <form method="POST" class="login-card" autocomplete="on">
+    <div class="logo"></div>
+    <h1>Audio Control</h1>
+    <p class="sub">Accede con tus credenciales</p>
+
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+    <label class="field">
+      <span>Usuario</span>
+      <input type="text" name="username" autocomplete="username" required autofocus>
+    </label>
+    <label class="field">
+      <span>Contraseña</span>
+      <input type="password" name="password" autocomplete="current-password" required>
+    </label>
+
+    <button type="submit" class="submit">Entrar</button>
+    <div class="footer">SISTEMA DE CONTROL DE AUDIO</div>
+  </form>
+</body>
+</html>
