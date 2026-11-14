@@ -3,80 +3,74 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0a" id="meta-theme">
+<script>
+  (function(){
+    try{
+      const saved = localStorage.getItem('theme');
+      document.documentElement.setAttribute('data-theme', saved || 'dark');
+    }catch(e){ document.documentElement.setAttribute('data-theme','dark'); }
+  })();
+</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 <title>Acceder · Audio Control</title>
-<style>
-  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  :root{
-    --bg:#fafafa;--surface:#fff;--border:#e8e8e8;--text:#0a0a0a;
-    --text-muted:#737373;--text-faint:#a3a3a3;--danger:#b91c1c;--danger-bg:#fef2f2;
-  }
-  body{
-    background:var(--bg);color:var(--text);font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
-    font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;
-    min-height:100dvh;display:grid;place-items:center;padding:20px;
-    padding-bottom:calc(20px + env(safe-area-inset-bottom));
-  }
-  .login-card{
-    width:100%;max-width:380px;background:var(--surface);border:1px solid var(--border);
-    border-radius:16px;padding:40px 32px;box-shadow:0 4px 24px rgba(0,0,0,.05);
-    animation:cardIn 500ms cubic-bezier(.4,0,.2,1);
-  }
-  @keyframes cardIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
-  .logo{
-    width:44px;height:44px;background:var(--text);border-radius:11px;
-    margin-bottom:24px;position:relative;
-  }
-  .logo::after{
-    content:'';position:absolute;inset:11px;background:var(--surface);border-radius:4px;
-    clip-path:polygon(0 20%,100% 0,100% 100%,0 80%);
-  }
-  h1{font-size:22px;font-weight:700;letter-spacing:-.02em;margin-bottom:6px}
-  .sub{color:var(--text-muted);font-size:13px;margin-bottom:28px}
-  .field{display:block;margin-bottom:16px}
-  .field span{
-    display:block;font-size:11px;font-weight:700;letter-spacing:.08em;
-    text-transform:uppercase;color:var(--text-muted);margin-bottom:7px;
-  }
-  .field input{
-    width:100%;padding:12px 14px;background:var(--surface);border:1px solid var(--border);
-    border-radius:9px;font-family:inherit;font-size:14px;color:var(--text);
-    outline:none;transition:border-color 180ms,box-shadow 180ms;
-  }
-  .field input:focus{border-color:var(--text);box-shadow:0 0 0 3px rgba(10,10,10,.06)}
-  .submit{
-    width:100%;padding:13px;background:var(--text);color:var(--surface);border:none;
-    border-radius:9px;font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;
-    margin-top:8px;transition:background 180ms,transform 100ms;
-  }
-  .submit:hover{background:#1f1f1f}
-  .submit:active{transform:scale(.98)}
-  .error{
-    background:var(--danger-bg);color:var(--danger);padding:11px 14px;
-    border-radius:9px;font-size:13px;margin-bottom:16px;border:1px solid #fecaca;
-    animation:cardIn 300ms;
-  }
-  .footer{text-align:center;color:var(--text-faint);font-size:11px;margin-top:22px;letter-spacing:.04em}
-</style>
 </head>
-<body>
+<body class="login-page">
+
+<div class="login-shell">
+  <div class="login-topbar">
+    <button class="btn btn-ghost btn-icon theme-toggle" onclick="toggleTheme()"
+            title="Cambiar tema" aria-label="Cambiar tema">
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="4"/>
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+      </svg>
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      </svg>
+    </button>
+  </div>
+
   <form method="POST" class="login-card" autocomplete="on">
-    <div class="logo"></div>
+    <div class="login-logo"></div>
     <h1>Audio Control</h1>
     <p class="sub">Accede con tus credenciales</p>
 
-    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    {% if error %}<div class="login-error">{{ error }}</div>{% endif %}
 
-    <label class="field">
-      <span>Usuario</span>
-      <input type="text" name="username" autocomplete="username" required autofocus>
+    <label class="input-group" style="margin-bottom:16px">
+      <label>Usuario</label>
+      <input class="input" type="text" name="username"
+             autocomplete="username" required autofocus>
     </label>
-    <label class="field">
-      <span>Contraseña</span>
-      <input type="password" name="password" autocomplete="current-password" required>
+    <label class="input-group" style="margin-bottom:20px">
+      <label>Contraseña</label>
+      <input class="input" type="password" name="password"
+             autocomplete="current-password" required>
     </label>
 
-    <button type="submit" class="submit">Entrar</button>
-    <div class="footer">SISTEMA DE CONTROL DE AUDIO</div>
+    <button type="submit" class="btn btn-primary btn-block" style="min-height:44px">Entrar</button>
+    <div class="login-footer">Sistema de control de audio</div>
   </form>
+</div>
+
+<script>
+function applyTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('theme', theme);
+  const meta = document.getElementById('meta-theme');
+  if (meta) meta.setAttribute('content', theme === 'dark' ? '#0a0a0a' : '#fafafa');
+}
+function toggleTheme(){
+  document.documentElement.classList.add('theme-transition');
+  const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
+  setTimeout(() => document.documentElement.classList.remove('theme-transition'), 320);
+}
+// Sincroniza meta-theme con el tema inicial
+applyTheme(document.documentElement.getAttribute('data-theme') || 'dark');
+</script>
 </body>
 </html>
