@@ -54,6 +54,7 @@ jobs:
             --collect-all yt_dlp `
             --add-data "ffmpeg-bin;ffmpeg-bin" `
             --name listener `
+            --icon "default.ico" `
             listener.py
 
       - name: Upload executable
